@@ -4,8 +4,9 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <artifactId>maven-project-template</artifactId>
-  <version>2021.01.15</version>
+  <groupId>org.padaiyal.utilities</groupId>
+  <artifactId>vaidhiyar</artifactId>
+  <version>2021.01.31</version>
 
   <parent>
     <groupId>org.padaiyal</groupId>
@@ -17,9 +18,45 @@
   <distributionManagement>
     <repository>
       <id>github</id>
-      <name>jMavenProjectTemplate MVN package deployment</name>
-      <url>https://maven.pkg.github.com/padaiyal/jMavenProjectTemplate</url>
+      <name>jVaidhiyar MVN package deployment</name>
+      <url>https://maven.pkg.github.com/padaiyal/jVaidhiyar</url>
     </repository>
   </distributionManagement>
 
+  <properties>
+    <dependency.jProperties.version>2021.01.13</dependency.jProperties.version>
+    <dependency.jI18n.version>2021.01.14</dependency.jI18n.version>
+    <dependency.mockito.version>3.7.7</dependency.mockito.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.padaiyal.utilities</groupId>
+      <artifactId>properties</artifactId>
+      <version>${dependency.jProperties.version}</version>
+      <scope>system</scope>
+      <systemPath>${pom.basedir}/properties-${dependency.jProperties.version}.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>org.padaiyal.utilities</groupId>
+      <artifactId>i18n</artifactId>
+      <version>${dependency.jI18n.version}</version>
+      <scope>system</scope>
+      <systemPath>${pom.basedir}/i18n-${dependency.jI18n.version}.jar</systemPath>
+    </dependency>
+    <!-- https://mvnrepository.com/artifact/org.mockito/mockito-core -->
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>${dependency.mockito.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- https://mvnrepository.com/artifact/org.mockito/mockito-inline -->
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-inline</artifactId>
+      <version>${dependency.mockito.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 </project>
