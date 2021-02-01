@@ -1,10 +1,18 @@
 package org.padaiyal.utilities.vaidhiyar;
 
+import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.ThreadMXBean;
 import java.io.IOException;
+import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
 import java.lang.management.RuntimeMXBean;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -18,7 +26,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.padaiyal.utilities.I18nUtility;
 import org.padaiyal.utilities.PropertyUtility;
+import org.padaiyal.utilities.vaidhiyar.abstractions.ExtendedMemoryUsage;
 import org.padaiyal.utilities.vaidhiyar.abstractions.ExtendedThreadInfo;
+import org.padaiyal.utilities.vaidhiyar.abstractions.GarbageCollectionInfo;
 
 /**
  * Utility for retrieving JVM specific information.
@@ -29,6 +39,19 @@ public final class JvmUtility {
    * Logger object used to log information and errors.
    */
   private static final Logger logger = LogManager.getLogger(JvmUtility.class);
+  /**
+   * GarbageCollectorMXBean objects used to get garbage collection information.
+   */
+  private static final List<GarbageCollectorMXBean> garbageCollectorMxBeans
+      = ManagementFactory.getGarbageCollectorMXBeans();
+  /**
+   * HotSpotDiagnosticMXBean object used to retrieve heap dump and VM options.
+   */
+  private static HotSpotDiagnosticMXBean hotSpotDiagnosticMXBean;
+  /**
+   * MemoryMXBean object used to get heap memory information.
+   */
+  private static final MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
   /**
    * ThreadMXBean object used to get thread CPU times.
    */
@@ -84,11 +107,15 @@ public final class JvmUtility {
           Long.class,
           "JvmUtility.cpuSamplingInterval.milliseconds"
       );
+
+      hotSpotDiagnosticMXBean = ManagementFactory.newPlatformMXBeanProxy(
+          ManagementFactory.getPlatformMBeanServer(),
+          "com.sun.management:type=HotSpotDiagnostic",
+          HotSpotDiagnosticMXBean.class
+      );
     } catch (IOException e) {
       logger.error(e);
     }
-
-
   };
 
   /**
@@ -106,7 +133,6 @@ public final class JvmUtility {
 
   static {
     dependantValuesInitializer.run();
-
     cpuUsageCollectorFuture = executorService.submit(cpuUsageCollectorThread);
   }
 
@@ -115,6 +141,137 @@ public final class JvmUtility {
    */
   private JvmUtility() {
 
+  }
+
+  /**
+   * Get the heap memory usage information.
+   *
+   * @return The ExtendedMemoryUsage object representing the heap memory usage.
+   */
+  public static ExtendedMemoryUsage getHeapMemoryUsage() {
+    return new ExtendedMemoryUsage(memoryMXBean.getHeapMemoryUsage());
+  }
+
+  /**
+   * Get the non heap memory usage information.
+   *
+   * @return The ExtendedMemoryUsage object representing the non heap memory usage.
+   */
+  public static ExtendedMemoryUsage getNonHeapMemoryUsage() {
+    return new ExtendedMemoryUsage(memoryMXBean.getNonHeapMemoryUsage());
+  }
+
+  /**
+   * Runs the garbage collector.
+   *
+   * @return Returns the duration taken for garbage collection.
+   */
+  public static Duration runGarbageCollector() {
+    memoryMXBean.setVerbose(
+        PropertyUtility.getTypedProperty(
+            Boolean.class,
+            "JvmUtility.memoryMxBean.verbose.switch"
+        )
+    );
+    Duration garbageCollectionDuration;
+    logger.info(
+        I18nUtility.getString("JvmUtility.garbageCollection.starting")
+    );
+    Instant gcStartInstant = Instant.now();
+    memoryMXBean.gc();
+    garbageCollectionDuration = Duration.between(gcStartInstant, Instant.now());
+    logger.info(
+        I18nUtility.getString("JvmUtility.garbageCollection.completed"),
+        garbageCollectionDuration.toMillis(),
+        "ms"
+    );
+    return garbageCollectionDuration;
+  }
+
+  /**
+   * Returns the following garbage collection info:
+   *  - Collection count.
+   *  - Collection time.
+   *  - Memory pools in which garbage has been collected.
+   *
+   * @return Returns the garbage collection info.
+   */
+  public static GarbageCollectionInfo[] getGarbageCollectionInfo() {
+    return garbageCollectorMxBeans.stream()
+        .map(garbageCollectorMXBean -> new GarbageCollectionInfo(
+            garbageCollectorMXBean.getName(),
+            garbageCollectorMXBean.getCollectionCount(),
+            garbageCollectorMXBean.getCollectionTime()
+        ))
+        .toArray(GarbageCollectionInfo[]::new);
+  }
+
+  /**
+   * Dump the heap memory contents onto a file.
+   *
+   * @param destinationDirectory  Destination directory
+   * @param heapDumpFileName      Name of the heap dump file generated.
+   * @param dumpOnlyLiveObjects   If true dump only live objects i.e. objects that are reachable
+   *                              from others
+   * @return                      Time taken to generate heap dump.
+   * @throws IOException          When there is an issue generating a heap dump.
+   */
+  public static Duration generateHeapDump(
+      Path destinationDirectory,
+      String heapDumpFileName,
+      boolean dumpOnlyLiveObjects
+  ) throws IOException {
+    // Input validation.
+    Objects.requireNonNull(destinationDirectory);
+    if (!Files.exists(destinationDirectory)) {
+      throw new IllegalArgumentException(
+          I18nUtility.getFormattedString(
+              "JvmUtility.generateHeapDump.destinationDirectoryDoesNotExist",
+              destinationDirectory
+          )
+      );
+    }
+    if (!Files.isDirectory(destinationDirectory)) {
+      throw new IllegalArgumentException(
+          I18nUtility.getFormattedString(
+              "JvmUtility.generateHeapDump.invalidDestinationDirectory",
+              destinationDirectory
+          )
+      );
+    }
+    Objects.requireNonNull(heapDumpFileName);
+
+    String heapDumpFileExtension = ".hprof";
+    String heapDumpFileNameWithExtension = heapDumpFileName;
+    // Add file extension if missing.
+    if (!heapDumpFileName.endsWith(heapDumpFileExtension)) {
+      heapDumpFileNameWithExtension += heapDumpFileExtension;
+    }
+
+    Path destinationHeapDumpFilePath = destinationDirectory.resolve(heapDumpFileNameWithExtension);
+
+    logger.info(
+        I18nUtility.getString("JvmUtility.generateHeapDump.generating")
+    );
+    Instant heapDumpGenerationStartInstant = Instant.now();
+    if (hotSpotDiagnosticMXBean == null) {
+      dependantValuesInitializer.run();
+    }
+    hotSpotDiagnosticMXBean.dumpHeap(
+        destinationHeapDumpFilePath.toAbsolutePath()
+            .toString(),
+        dumpOnlyLiveObjects
+    );
+    Duration heapDumpGenerationDuration = Duration.between(
+        heapDumpGenerationStartInstant,
+        Instant.now()
+    );
+    logger.info(
+        I18nUtility.getString("JvmUtility.generateHeapDump.generated"),
+        destinationHeapDumpFilePath.toAbsolutePath().toString()
+    );
+
+    return heapDumpGenerationDuration;
   }
 
   /**

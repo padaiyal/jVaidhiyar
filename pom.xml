@@ -6,7 +6,7 @@
 
   <groupId>org.padaiyal.utilities</groupId>
   <artifactId>vaidhiyar</artifactId>
-  <version>2021.01.31</version>
+  <version>2021.02.01</version>
 
   <parent>
     <groupId>org.padaiyal</groupId>

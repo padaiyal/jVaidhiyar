@@ -3,18 +3,23 @@ package org.padaiyal.utilities.vaidhiyar;
 import com.sun.management.OperatingSystemMXBean;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Future;
+import javax.management.MBeanServerConnection;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.converter.ConvertWith;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentMatchers;
 import org.mockito.MockedStatic;
@@ -22,7 +27,10 @@ import org.mockito.Mockito;
 import org.padaiyal.utilities.I18nUtility;
 import org.padaiyal.utilities.PropertyUtility;
 import org.padaiyal.utilities.vaidhiyar.abstractions.CpuLoadGenerator;
+import org.padaiyal.utilities.vaidhiyar.abstractions.ExtendedMemoryUsage;
 import org.padaiyal.utilities.vaidhiyar.abstractions.ExtendedThreadInfo;
+import org.padaiyal.utilities.vaidhiyar.abstractions.GarbageCollectionInfo;
+import org.padaiyal.utilities.vaidhiyar.parameterconverters.ExceptionClassConverter;
 
 /**
  * Tests JvmUtility.
@@ -415,7 +423,6 @@ public final class JvmUtilityTest {
    */
   @Test
   void testDependantValuesInitializer() {
-
     // Mock throwing IOException when adding the property file.
     try (
         MockedStatic<PropertyUtility> propertyUtilityMock = Mockito.mockStatic(
@@ -426,6 +433,23 @@ public final class JvmUtilityTest {
           () -> PropertyUtility.addPropertyFile(
               ArgumentMatchers.any(),
               ArgumentMatchers.anyString()
+          )
+      ).thenThrow(IOException.class);
+
+      Assertions.assertDoesNotThrow(JvmUtility.dependantValuesInitializer::run);
+    }
+
+    // Mock throwing IOException when initializing the HotSpotDiagnosticMXBean.
+    try (
+        MockedStatic<ManagementFactory> propertyUtilityMock = Mockito.mockStatic(
+            ManagementFactory.class
+        )
+    ) {
+      propertyUtilityMock.when(
+          () -> ManagementFactory.newPlatformMXBeanProxy(
+              ArgumentMatchers.any(MBeanServerConnection.class),
+              ArgumentMatchers.anyString(),
+              ArgumentMatchers.any()
           )
       ).thenThrow(IOException.class);
 
@@ -450,6 +474,35 @@ public final class JvmUtilityTest {
   }
 
   /**
+   * Tests if a specified value is within a desired range.
+   *
+   * @param fieldName           Name of the field whose value is tested.
+   * @param value               Value to test.
+   * @param lowerLimitInclusive Inclusive lower limit of range.
+   * @param upperLimitInclusive Inclusive upper limit of range.
+   *
+   * @param <T>                 Numeric type to test.
+   */
+  private <T extends Number> void testNumericRange(
+      String fieldName,
+      T value,
+      T lowerLimitInclusive,
+      T upperLimitInclusive
+  ) {
+    Assertions.assertTrue(
+        value.doubleValue() >= lowerLimitInclusive.doubleValue()
+            && value.doubleValue() <= upperLimitInclusive.doubleValue(),
+        I18nUtility.getFormattedString(
+            "JvmUtilityTest.error.valueOutOfNumericRange",
+            fieldName,
+            value,
+            lowerLimitInclusive,
+            upperLimitInclusive
+        )
+    );
+  }
+
+  /**
    * Tests JvmUtility::getAllocatedMemoryInBytes() when an invalid thread ID is supplied.
    *
    * @param threadId Thread ID for which the allocated memory size is to be retrieved.
@@ -464,4 +517,207 @@ public final class JvmUtilityTest {
         () -> JvmUtility.getAllocatedMemoryInBytes(threadId)
     );
   }
+
+  /**
+   * Tests JvmUtility::getMemoryUsage() for heap and non heap memory.
+   *
+   * @param memoryType Type of memory to get usage values and test.
+   */
+  @ParameterizedTest
+  @CsvSource({
+      "heap",
+      "nonHeap"
+  })
+  void testGetMemoryUsage(String memoryType) {
+    double memoryUsagePercentageLowerLimit = -1.0;
+    double memoryUsagePercentageUpperLimit = -1.0;
+    long maxMemory = Long.MAX_VALUE;
+    ExtendedMemoryUsage extendedMemoryUsage = null;
+    if (memoryType.equals("heap")) {
+      extendedMemoryUsage = JvmUtility.getHeapMemoryUsage();
+      memoryUsagePercentageLowerLimit = 0.0;
+      memoryUsagePercentageUpperLimit = 100.0;
+      maxMemory = extendedMemoryUsage.getMax();
+    } else if (memoryType.equals("nonHeap")) {
+      extendedMemoryUsage = JvmUtility.getNonHeapMemoryUsage();
+    }
+
+    Assertions.assertNotNull(
+        extendedMemoryUsage,
+        I18nUtility.getFormattedString(
+            "JvmUtilityTest.error.invalidValue",
+            memoryType,
+            "memoryType"
+        )
+    );
+
+    testNumericRange(
+        memoryType + " memoryUsagePercentage",
+        extendedMemoryUsage.getMemoryUsagePercentage(),
+        memoryUsagePercentageLowerLimit,
+        memoryUsagePercentageUpperLimit
+    );
+    testNumericRange(
+        memoryType + " memoryInit",
+        extendedMemoryUsage.getInit(),
+        0.0,
+        maxMemory
+    );
+    testNumericRange(
+        memoryType + " memoryUsed",
+        extendedMemoryUsage.getUsed(),
+        0.0,
+        extendedMemoryUsage.getCommitted()
+    );
+    testNumericRange(
+        memoryType + " memoryCommitted",
+        extendedMemoryUsage.getCommitted(),
+        extendedMemoryUsage.getUsed(),
+        maxMemory
+    );
+    testNumericRange(
+        memoryType + " memoryMax",
+        maxMemory,
+        extendedMemoryUsage.getCommitted(),
+        maxMemory
+    );
+  }
+
+  /**
+   * Test JvmUtility::getGarbageCollectionInfos().
+   */
+  @Test
+  void testGarbageCollectionInfo() {
+    GarbageCollectionInfo[] garbageCollectionInfos = JvmUtility.getGarbageCollectionInfo();
+
+    Assertions.assertNotNull(garbageCollectionInfos);
+
+    Arrays.stream(garbageCollectionInfos)
+        .peek(garbageCollectionInfo -> logger.info(
+            I18nUtility.getFormattedString(
+                "JvmUtilityTest.info.garbageCollectionInfo",
+                garbageCollectionInfo.getName(),
+                garbageCollectionInfo.getCollectionCount(),
+                garbageCollectionInfo.getCollectionTime().toMillis(),
+                "ms"
+            )
+          )
+        )
+        .forEach(garbageCollectionInfo -> {
+          Assertions.assertNotNull(garbageCollectionInfo.getName());
+          testNumericRange(
+              "GC collection count",
+              garbageCollectionInfo.getCollectionCount(),
+              0,
+              Long.MAX_VALUE
+          );
+          testNumericRange(
+              "GC collection time",
+              garbageCollectionInfo.getCollectionTime()
+                  .toMillis(),
+              0,
+              Long.MAX_VALUE
+          );
+        });
+  }
+
+  /**
+   * Test JvmUtility::runGarbageCollector().
+   */
+  @Test
+  void testRunGarbageCollector() {
+    Duration garbageCollectionDuration = JvmUtility.runGarbageCollector();
+    Assertions.assertNotNull(garbageCollectionDuration);
+    Assertions.assertTrue(garbageCollectionDuration.toMillis() >= 0);
+  }
+
+  /**
+   * Tests JvmUtility::generateHeapDump() with valid inputs.
+   *
+   * @param heapDumpFileName                Name of the output heap dump file. May or may not
+   *                                        include file extension.
+   * @param expectedHeapDumpFileName        Expected name of the output heap dump file.
+   * @param dumpOnlyLiveObjects             If true, it only dumps reachable objects, else dumps all
+   *                                        objects in heap.
+   * @throws IOException                    When there is abn issue generating the heap dump.
+   */
+  @ParameterizedTest
+  @CsvSource({
+      "heapDump, heapDump.hprof, false",
+      "heapDump, heapDump.hprof, true",
+      "heapDump.hprof, heapDump.hprof, false",
+      "heapDump.hprof, heapDump.hprof, true"
+  })
+  void testGenerateHeapDumpWithValidInputs(
+      String heapDumpFileName,
+      String expectedHeapDumpFileName,
+      boolean dumpOnlyLiveObjects
+  ) throws IOException {
+    Path destinationDirectoryPath = Files.createTempDirectory("heap_destination");
+
+    Assertions.assertTrue(
+        Files.exists(destinationDirectoryPath)
+    );
+
+    Duration heapDumpGenerationDuration = JvmUtility.generateHeapDump(
+        destinationDirectoryPath,
+        heapDumpFileName,
+        dumpOnlyLiveObjects
+    );
+
+    Path expectedHeapDumpFilePath = destinationDirectoryPath.resolve(expectedHeapDumpFileName);
+    Assertions.assertTrue(
+        Files.exists(expectedHeapDumpFilePath)
+    );
+
+    Assertions.assertNotNull(heapDumpGenerationDuration);
+    Assertions.assertTrue(heapDumpGenerationDuration.toMillis() >= 0);
+
+    // Clean test bed.
+    Files.deleteIfExists(expectedHeapDumpFilePath);
+    Files.deleteIfExists(destinationDirectoryPath);
+  }
+
+  /**
+   * Tests JvmUtility::generateHeapDump() with invalid inputs.
+   *
+   * @param destinationDirectoryPathString  Directory where the heap memory is to be dumped.
+   * @param heapDumpFileName                Name of the output heap dump file.
+   * @param dumpOnlyLiveObjects             If true, it only dumps reachable objects, else dumps all
+   *                                        objects in heap.
+   * @param expectedExceptionClass          Expected exception to be thrown.
+   */
+  @ParameterizedTest
+  @CsvSource({
+      ", , false, NullPointerException.class",
+      ", , true, NullPointerException.class",
+      "., , false, NullPointerException.class",
+      "., , true, NullPointerException.class",
+      ", heapDump, true, NullPointerException.class",
+      ", heapDump, false, NullPointerException.class",
+      ", heapDump.prof, true, NullPointerException.class",
+      ", heapDump.prof, false, NullPointerException.class",
+      "nonExistentDirectory, heapDump, true, IllegalArgumentException.class",
+      "pom.xml, heapDump, true, IllegalArgumentException.class"
+  })
+  void testGenerateHeapDumpWithInvalidInputs(
+      String destinationDirectoryPathString,
+      String heapDumpFileName,
+      boolean dumpOnlyLiveObjects,
+      @ConvertWith(ExceptionClassConverter.class)
+      Class<? extends Exception> expectedExceptionClass
+  ) {
+    Path destinationDirectoryPath
+        = (destinationDirectoryPathString != null)
+        ? Paths.get(destinationDirectoryPathString) : null;
+    Assertions.assertThrows(
+        expectedExceptionClass,
+        () -> JvmUtility.generateHeapDump(
+            destinationDirectoryPath,
+            heapDumpFileName,
+            dumpOnlyLiveObjects
+        )
+    );
+  }
+
 }
