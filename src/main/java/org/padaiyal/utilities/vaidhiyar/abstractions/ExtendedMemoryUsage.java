@@ -1,10 +1,10 @@
 package org.padaiyal.utilities.vaidhiyar.abstractions;
 
+import com.google.gson.JsonObject;
 import java.lang.management.MemoryUsage;
 
 /**
- * An extension on the MemoryUsage object.
- * https://docs.oracle.com/en/java/javase/14/docs/api/java.management/java/lang/management/
+ * An extension on the MemoryUsage object. https://docs.oracle.com/en/java/javase/14/docs/api/java.management/java/lang/management/
  * GarbageCollectorMXBean.html
  */
 public class ExtendedMemoryUsage extends MemoryUsage {
@@ -75,5 +75,23 @@ public class ExtendedMemoryUsage extends MemoryUsage {
    */
   public double getMemoryUsagePercentage() {
     return memoryUsagePercentage;
+  }
+
+  /**
+   * Gets a JSON representation of an instance of this class.
+   *
+   * @return JSON representation of an instance of this class.
+   */
+  public JsonObject toJsonObject() {
+    JsonObject extendedMemoryUsageJsonObject = new JsonObject();
+    extendedMemoryUsageJsonObject.addProperty("initMemoryInBytes", getInit());
+    extendedMemoryUsageJsonObject.addProperty("usedMemoryInBytes", getUsed());
+    extendedMemoryUsageJsonObject.addProperty("committedMemoryInBytes", getCommitted());
+    extendedMemoryUsageJsonObject.addProperty("maxMemoryInBytes", getMax());
+    extendedMemoryUsageJsonObject.addProperty(
+        "memoryUsagePercentage",
+        getMemoryUsagePercentage()
+    );
+    return extendedMemoryUsageJsonObject;
   }
 }

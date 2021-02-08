@@ -1,7 +1,12 @@
 package org.padaiyal.utilities.vaidhiyar;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.sun.management.HotSpotDiagnosticMXBean;
 import com.sun.management.ThreadMXBean;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
@@ -45,10 +50,6 @@ public final class JvmUtility {
   private static final List<GarbageCollectorMXBean> garbageCollectorMxBeans
       = ManagementFactory.getGarbageCollectorMXBeans();
   /**
-   * HotSpotDiagnosticMXBean object used to retrieve heap dump and VM options.
-   */
-  private static HotSpotDiagnosticMXBean hotSpotDiagnosticMXBean;
-  /**
    * MemoryMXBean object used to get heap memory information.
    */
   private static final MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
@@ -61,7 +62,6 @@ public final class JvmUtility {
    * RuntimeMxBean object used to get CPU core count.
    */
   private static final RuntimeMXBean runtimeMxBean = ManagementFactory.getRuntimeMXBean();
-
   /**
    * Map to store the thread CPU usages.
    */
@@ -71,6 +71,18 @@ public final class JvmUtility {
    * ExecutorService object used to manage the thread CPU usage collector.
    */
   private static final ExecutorService executorService = Executors.newSingleThreadExecutor();
+  /**
+   * HotSpotDiagnosticMXBean object used to retrieve heap dump and VM options.
+   */
+  private static HotSpotDiagnosticMXBean hotSpotDiagnosticMXBean;
+  /**
+   * Switch to enable/disable thread CPU usage collection.
+   */
+  private static boolean runThreadCpuUsageCollectorSwitch;
+  /**
+   * Sampling interval to use to measure the thread CPU usages.
+   */
+  private static long cpuSamplingIntervalInMilliSeconds;
   /**
    * Callable implementation to execute when the thread CPU usage is to be collected.
    */
@@ -82,7 +94,6 @@ public final class JvmUtility {
     }
     return null;
   };
-
   /**
    * Initialize dependant values.
    */
@@ -108,24 +119,17 @@ public final class JvmUtility {
           "JvmUtility.cpuSamplingInterval.milliseconds"
       );
 
-      hotSpotDiagnosticMXBean = ManagementFactory.newPlatformMXBeanProxy(
-          ManagementFactory.getPlatformMBeanServer(),
-          "com.sun.management:type=HotSpotDiagnostic",
-          HotSpotDiagnosticMXBean.class
-      );
+      if (hotSpotDiagnosticMXBean == null) {
+        hotSpotDiagnosticMXBean = ManagementFactory.newPlatformMXBeanProxy(
+            ManagementFactory.getPlatformMBeanServer(),
+            "com.sun.management:type=HotSpotDiagnostic",
+            HotSpotDiagnosticMXBean.class
+        );
+      }
     } catch (IOException e) {
       logger.error(e);
     }
   };
-
-  /**
-   * Switch to enable/disable thread CPU usage collection.
-   */
-  private static boolean runThreadCpuUsageCollectorSwitch;
-  /**
-   * Sampling interval to use to measure the thread CPU usages.
-   */
-  private static long cpuSamplingIntervalInMilliSeconds;
   /**
    * Stores the Future object returned when the thread CPU usage collector is triggered.
    */
@@ -164,7 +168,7 @@ public final class JvmUtility {
   /**
    * Runs the garbage collector.
    *
-   * @return Returns the duration taken for garbage collection.
+   * @return The duration taken for garbage collection.
    */
   public static Duration runGarbageCollector() {
     memoryMXBean.setVerbose(
@@ -189,12 +193,12 @@ public final class JvmUtility {
   }
 
   /**
-   * Returns the following garbage collection info:
+   * Gets the following garbage collection info:
    *  - Collection count.
    *  - Collection time.
    *  - Memory pools in which garbage has been collected.
    *
-   * @return Returns the garbage collection info.
+   * @return The garbage collection info.
    */
   public static GarbageCollectionInfo[] getGarbageCollectionInfo() {
     return garbageCollectorMxBeans.stream()
@@ -254,9 +258,7 @@ public final class JvmUtility {
         I18nUtility.getString("JvmUtility.generateHeapDump.generating")
     );
     Instant heapDumpGenerationStartInstant = Instant.now();
-    if (hotSpotDiagnosticMXBean == null) {
-      dependantValuesInitializer.run();
-    }
+    dependantValuesInitializer.run();
     hotSpotDiagnosticMXBean.dumpHeap(
         destinationHeapDumpFilePath.toAbsolutePath()
             .toString(),
@@ -275,7 +277,27 @@ public final class JvmUtility {
   }
 
   /**
-   * Returns the thread CPU usage collector future.
+   * Gets a list of available VM options.
+   *
+   * @return A list of available VM options.
+   */
+  public static JsonArray getAllVmOptions() {
+    dependantValuesInitializer.run();
+    JsonArray vmOptions = new JsonArray();
+    hotSpotDiagnosticMXBean.getDiagnosticOptions()
+        .forEach(vmOption -> {
+          JsonObject vmOptionJsonObject = new JsonObject();
+          vmOptionJsonObject.addProperty("name", vmOption.getName());
+          vmOptionJsonObject.addProperty("value", vmOption.getValue());
+          vmOptionJsonObject.addProperty("origin", vmOption.getOrigin().toString());
+          vmOptionJsonObject.addProperty("isWriteable", vmOption.isWriteable());
+          vmOptions.add(vmOptionJsonObject);
+        });
+    return vmOptions;
+  }
+
+  /**
+   * Gets the thread CPU usage collector future.
    *
    * @return The thread CPU usage collector future.
    */
@@ -293,12 +315,11 @@ public final class JvmUtility {
   }
 
   /**
-   * Returns the switch used to toggle the state of the thread CPU usage collector.
+   * Gets the switch used to toggle the state of the thread CPU usage collector.
    *
-   * @return State of the thread CPU usage collector.
-   *         If true, it means that the thread CPU usage collector will keep running,
-   *         else it means that the thread CPU usage collector has terminated or will terminate
-   *         soon.
+   * @return State of the thread CPU usage collector. If true, it means that the thread CPU usage
+   *         collector will keep running, else it means that the thread CPU usage collector has
+   *         terminated or will terminate soon.
    */
   public static boolean getRunThreadCpuUsageCollectorSwitch() {
     return runThreadCpuUsageCollectorSwitch;
@@ -330,16 +351,14 @@ public final class JvmUtility {
   /**
    * Gets the extended thread info for all JVM threads.
    *
-   * @return Extended thread info for all JVM threads.
+   * @param threadStackDepth  Depth of thread stack to retrieve.
+   * @return                  Extended thread info for all JVM threads.
    */
-  public static ExtendedThreadInfo[] getAllExtendedThreadInfo() {
+  public static ExtendedThreadInfo[] getAllExtendedThreadInfo(int threadStackDepth) {
     return Arrays.stream(
         threadMxBean.getThreadInfo(
             threadMxBean.getAllThreadIds(),
-            PropertyUtility.getTypedProperty(
-                Integer.class,
-                "JvmUtility.thread.stackDepth"
-            )
+            threadStackDepth
         )
     ).map(threadInfo -> new ExtendedThreadInfo(
             threadInfo,
@@ -400,8 +419,8 @@ public final class JvmUtility {
    * Computes the thread CPU usages given the necessary inputs.
    *
    * @param initialThreadCpuTimesInNanoSeconds  Initial thread CPU times in nano seconds.
-   * @param currentThreadCpuTimesInNanoSeconds  Thread CPU times at the end of the sampling
-   *                                            duration in nano seconds.
+   * @param currentThreadCpuTimesInNanoSeconds  Thread CPU times at the end of the sampling duration
+   *                                            in nano seconds.
    * @param samplingDurationInMilliSeconds      Sampling duration in milli seconds.
    * @return                                    A map, mapping the thread ID to it's CPU usage.
    */
@@ -455,8 +474,8 @@ public final class JvmUtility {
         }
 
         double cpuThreadTimeInMilliSeconds = (
-                currentThreadCpuTimesInNanoSeconds.get(threadId)
-                    - initialThreadCpuTimesInNanoSeconds.get(threadId)
+            currentThreadCpuTimesInNanoSeconds.get(threadId)
+                - initialThreadCpuTimesInNanoSeconds.get(threadId)
         ) / (1000.0 * 1000.0);
         double threadCpuUsage
             = cpuThreadTimeInMilliSeconds * 100.0 / samplingDurationInMilliSeconds;
@@ -515,4 +534,78 @@ public final class JvmUtility {
     );
   }
 
+  /**
+   * Dump the JVM information onto a JSON file in the specified directory.
+   *
+   * @param destinationDirectory  Directory in which to create the JSON file.
+   * @param fileName              Name of the JSON file to create.
+   * @param threadStackDepth      Depth of the thread stack to obtain.
+   * @throws IOException          If there is an issue writing the JSON file.
+   */
+  public static void dumpJvmInformationToFile(
+      Path destinationDirectory,
+      String fileName,
+      int threadStackDepth
+  ) throws IOException {
+    // Input validation
+    Objects.requireNonNull(destinationDirectory);
+    if (!Files.exists(destinationDirectory)) {
+      throw new IllegalArgumentException(
+          I18nUtility.getFormattedString(
+              "JvmUtility.error.destinationPathDoesNotExist",
+              destinationDirectory
+          )
+      );
+    } else if (!Files.isDirectory(destinationDirectory)) {
+      throw new IllegalArgumentException(
+          I18nUtility.getFormattedString(
+              "JvmUtility.error.destinationPathNotADirectory",
+              destinationDirectory
+          )
+      );
+    }
+    Objects.requireNonNull(fileName);
+
+    @SuppressWarnings("SpellCheckingInspection")
+    Gson gsonObject = new GsonBuilder()
+        .setPrettyPrinting()
+        .create();
+    JsonObject jvmInformation = new JsonObject();
+    jvmInformation.addProperty(
+        "timestamp",
+        Instant.now().toString()
+    );
+    jvmInformation.add(
+        "heapUsage",
+        getHeapMemoryUsage().toJsonObject()
+    );
+    jvmInformation.add(
+        "nonHeapUsage",
+        getNonHeapMemoryUsage().toJsonObject()
+    );
+    jvmInformation.add(
+        "vmOptions",
+        getAllVmOptions()
+    );
+    jvmInformation.add(
+        "garbageCollectionInfos",
+        gsonObject.toJsonTree(getGarbageCollectionInfo())
+    );
+    JsonArray extendedThreadInfos = new JsonArray();
+    Arrays.stream(getAllExtendedThreadInfo(threadStackDepth))
+        .map(ExtendedThreadInfo::toJsonObject)
+        .forEach(extendedThreadInfos::add);
+    jvmInformation.add("threadInfos", extendedThreadInfos);
+
+    try (
+        BufferedWriter bufferedWriter = Files.newBufferedWriter(
+            destinationDirectory.resolve(fileName + ".json")
+        )
+    ) {
+      gsonObject.toJson(
+          jvmInformation,
+          bufferedWriter
+      );
+    }
+  }
 }
