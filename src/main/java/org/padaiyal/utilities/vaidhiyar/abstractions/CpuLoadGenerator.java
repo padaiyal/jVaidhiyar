@@ -63,7 +63,8 @@ public final class CpuLoadGenerator extends Thread {
   /**
    * Start the CPU load generation.
    *
-   * @param load CPU load to generate. A valid value is between 0 and 1 (inclusive).
+   * @param load                   CPU load to generate. A valid value is between 0 and 1
+   *                               (inclusive).
    * @param durationInMilliSeconds Duration to generate CPU load.
    */
   public synchronized void start(double load, long durationInMilliSeconds) {
@@ -100,7 +101,7 @@ public final class CpuLoadGenerator extends Thread {
     // Initialize all the threads (One per logical core)
     List<CpuLoadThread> cpuLoadThreads = IntStream.range(0, logicalCoresCount)
         .mapToObj(logicalCore
-            -> new CpuLoadThread(
+                -> new CpuLoadThread(
                 "CPU load thread",
                 PropertyUtility.getTypedProperty(
                     Integer.class,

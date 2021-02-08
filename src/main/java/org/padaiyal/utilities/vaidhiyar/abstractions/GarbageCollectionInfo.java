@@ -23,9 +23,9 @@ public class GarbageCollectionInfo {
   /**
    * Abstracts the information on the garbage collection performed so far.
    *
-   * @param name                          Name of the memory pool associated with this information.
-   * @param collectionCount               Total number of collections occurred so far.
-   * @param collectionTimeInMilliSeconds  Time taken to perform garbage collection in milliseconds.
+   * @param name                         Name of the memory pool associated with this information.
+   * @param collectionCount              Total number of collections occurred so far.
+   * @param collectionTimeInMilliSeconds Time taken to perform garbage collection in milliseconds.
    */
   public GarbageCollectionInfo(
       String name,

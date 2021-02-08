@@ -1,10 +1,10 @@
 package org.padaiyal.utilities.vaidhiyar.abstractions;
 
+import com.google.gson.JsonObject;
 import java.lang.management.MemoryUsage;
 
 /**
- * An extension on the MemoryUsage object.
- * https://docs.oracle.com/en/java/javase/14/docs/api/java.management/java/lang/management/
+ * An extension on the MemoryUsage object. https://docs.oracle.com/en/java/javase/14/docs/api/java.management/java/lang/management/
  * GarbageCollectorMXBean.html
  */
 public class ExtendedMemoryUsage extends MemoryUsage {
@@ -31,11 +31,11 @@ public class ExtendedMemoryUsage extends MemoryUsage {
    * @param max       Represents the maximum amount of memory (in bytes) that can be used for memory
    *                  management. Its value may be undefined. The maximum amount of memory may
    *                  change over time if defined. The amount of used and committed memory will
-   *                  always be less than or equal to max if max is defined. A memory allocation
-   *                  may fail if it attempts to increase the used memory such that used > committed
+   *                  always be less than or equal to max if max is defined. A memory allocation may
+   *                  fail if it attempts to increase the used memory such that used > committed
    *                  even if used <= max would still be true (for example, when the system is low
    *                  on virtual memory).
-   *      Below is a picture showing an example of a memory pool:
+   *        Below is a picture showing an example of a memory pool:
    *         +----------------------------------------------+
    *         +////////////////           |                  +
    *         +////////////////           |                  +
@@ -75,5 +75,23 @@ public class ExtendedMemoryUsage extends MemoryUsage {
    */
   public double getMemoryUsagePercentage() {
     return memoryUsagePercentage;
+  }
+
+  /**
+   * Gets a JSON representation of an instance of this class.
+   *
+   * @return JSON representation of an instance of this class.
+   */
+  public JsonObject toJsonObject() {
+    JsonObject extendedMemoryUsageJsonObject = new JsonObject();
+    extendedMemoryUsageJsonObject.addProperty("initMemoryInBytes", getInit());
+    extendedMemoryUsageJsonObject.addProperty("usedMemoryInBytes", getUsed());
+    extendedMemoryUsageJsonObject.addProperty("committedMemoryInBytes", getCommitted());
+    extendedMemoryUsageJsonObject.addProperty("maxMemoryInBytes", getMax());
+    extendedMemoryUsageJsonObject.addProperty(
+        "memoryUsagePercentage",
+        getMemoryUsagePercentage()
+    );
+    return extendedMemoryUsageJsonObject;
   }
 }

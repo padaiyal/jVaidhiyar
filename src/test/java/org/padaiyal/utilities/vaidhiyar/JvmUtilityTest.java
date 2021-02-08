@@ -1,5 +1,6 @@
 package org.padaiyal.utilities.vaidhiyar;
 
+import com.google.gson.JsonArray;
 import com.sun.management.OperatingSystemMXBean;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
@@ -113,9 +114,9 @@ public final class JvmUtilityTest {
    */
   @Test
   public void testExtendedThreadInfo() {
-    Arrays.stream(JvmUtility.getAllExtendedThreadInfo())
+    Arrays.stream(JvmUtility.getAllExtendedThreadInfo(0))
         .forEach(extendedThreadInfo -> {
-          Assertions.assertTrue(extendedThreadInfo.getCpuUsage() >= -1);
+          Assertions.assertTrue(extendedThreadInfo.getCpuUsage() >= 0);
           Assertions.assertTrue(extendedThreadInfo.getCpuUsage() <= 100);
           Assertions.assertTrue(extendedThreadInfo.getMemoryAllocatedInBytes() >= 0);
           Assertions.assertNotNull(extendedThreadInfo.getThreadInfo());
@@ -146,17 +147,17 @@ public final class JvmUtilityTest {
 
     String expectedCpuLoadThreadName = PropertyUtility.getProperty("CpuLoadGenerator.thread.name");
 
-    Arrays.stream(JvmUtility.getAllExtendedThreadInfo())
+    Arrays.stream(JvmUtility.getAllExtendedThreadInfo(0))
         .filter(extendedThreadInfo -> extendedThreadInfo.getThreadInfo()
             .getThreadName()
             .equals(expectedCpuLoadThreadName)
         )
-        .map(extendedThreadInfo -> extendedThreadInfo.getCpuUsage() == -1)
+        .map(extendedThreadInfo -> extendedThreadInfo.getCpuUsage() == 0)
         .forEach(Assertions::assertTrue);
 
     // Wait for the CPU load generator to start.
     Thread.sleep(durationToWaitForCpuLoadGeneratorInMilliSeconds);
-    ExtendedThreadInfo[] extendedThreadInfos = JvmUtility.getAllExtendedThreadInfo();
+    ExtendedThreadInfo[] extendedThreadInfos = JvmUtility.getAllExtendedThreadInfo(0);
 
     Assertions.assertNotNull(extendedThreadInfos);
 
@@ -720,4 +721,51 @@ public final class JvmUtilityTest {
     );
   }
 
+  @Test
+  void testGetVmOptions() throws IOException {
+    JsonArray vmOptions = JvmUtility.getAllVmOptions();
+    Assertions.assertNotNull(vmOptions);
+    Assertions.assertTrue(vmOptions.size() > 0);
+
+    JvmUtility.dumpJvmInformationToFile(
+        Paths.get("."),
+        "jvm_info",
+        1000
+    );
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+      // Null inputs.
+      ",,10,NullPointerException.class",
+      ",info,10,NullPointerException.class",
+      ",info.json,10,NullPointerException.class",
+      ".,,10,NullPointerException.class",
+
+      // Non existent destinationDirectory
+      "nonexistent,info.json,10,IllegalArgumentException.class",
+      // File path provided instead of a destination directory.
+      "pom.xml,info.json,10,IllegalArgumentException.class",
+
+      // Invalid thread stack depth.
+      ".,info.json,-1,IllegalArgumentException.class",
+  })
+  void testDumpingJvmInformationToFileWithInvalidInputs(
+      String destinationDirectory,
+      String fileName,
+      int threadStackDepth,
+      @ConvertWith(ExceptionClassConverter.class)
+      Class<? extends Exception> expectedExceptionClass
+  ) {
+    Path destinationDirectoryPath = (destinationDirectory == null) ? null
+        : Paths.get(destinationDirectory);
+    Assertions.assertThrows(
+        expectedExceptionClass,
+        () -> JvmUtility.dumpJvmInformationToFile(
+            destinationDirectoryPath,
+            fileName,
+            threadStackDepth
+        )
+    );
+  }
 }
